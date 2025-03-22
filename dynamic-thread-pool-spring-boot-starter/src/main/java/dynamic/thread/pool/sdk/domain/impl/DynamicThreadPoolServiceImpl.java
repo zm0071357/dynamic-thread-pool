@@ -5,6 +5,7 @@ import dynamic.thread.pool.sdk.domain.DynamicThreadPoolService;
 import dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -12,8 +13,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class DynamicThreadPoolServiceImpl implements DynamicThreadPoolService {
 
     private final Logger logger = LoggerFactory.getLogger(DynamicThreadPoolServiceImpl.class);
+
+    // 应用名
     private final String applicationName;
+
+    // 线程池Map集合 - 在注册为Bean时已自动注入到Map中
     private final Map<String, ThreadPoolExecutor> threadPoolExecutorMap;
+
+    // 构造注入
     public DynamicThreadPoolServiceImpl(String applicationName, Map<String, ThreadPoolExecutor> threadPoolExecutorMap) {
         this.applicationName = applicationName;
         this.threadPoolExecutorMap = threadPoolExecutorMap;
@@ -43,14 +50,13 @@ public class DynamicThreadPoolServiceImpl implements DynamicThreadPoolService {
             threadPoolVOS.add(threadPoolConfigVO);
         }
         return threadPoolVOS;
-
     }
 
     @Override
     public ThreadPoolConfigEntity queryThreadPoolConfigByName(String threadPoolName) {
         // 根据线程池名称获取线程池
         ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolName);
-        // 线程池为空 没有该线程池则返回一个新线程池实体
+        // 线程池为空 - 没有该线程池，返回新线程池
         if (null == threadPoolExecutor) {
             return new ThreadPoolConfigEntity(applicationName, threadPoolName);
         }

@@ -9,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.Set;
 
 /**
  * 动态线程池变更监听器
@@ -36,8 +35,12 @@ public class ThreadPoolListener implements MessageListener<ThreadPoolConfigEntit
         logger.info("调整线程池配置，线程池名称：{} 更新完成", threadPoolConfigEntity.getThreadPoolName());
         // 将更新后的线程池列表上报到注册中心
         List<ThreadPoolConfigEntity> threadPoolConfigEntities = dynamicThreadPoolService.queryThreadPoolList();
-        registryService.reportThreadPool(threadPoolConfigEntities);
-        // 将该线程池的配置信息上报到注册中心  主要设置过期时间
+        try {
+            registryService.reportThreadPool(threadPoolConfigEntities);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        // 将该线程池的配置信息上报到注册中心
         ThreadPoolConfigEntity currentThreadPoolConfigEntity = dynamicThreadPoolService.queryThreadPoolConfigByName(threadPoolConfigEntity.getThreadPoolName());
         registryService.reportThreadPoolConfigParameter(currentThreadPoolConfigEntity);
         logger.info("上报线程池配置：{}", JSON.toJSONString(currentThreadPoolConfigEntity));

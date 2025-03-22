@@ -3,7 +3,6 @@ package dynamic.thread.pool.sdk.domain;
 import dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
 
 import java.util.List;
-import java.util.Set;
 
 public interface DynamicThreadPoolService {
 

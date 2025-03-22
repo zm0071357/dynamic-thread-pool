@@ -2,26 +2,49 @@ package dynamic.thread.pool.trigger;
 
 import com.alibaba.fastjson.JSON;
 import dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
+import dynamic.thread.pool.sdk.type.DCCValue;
 import dynamic.thread.pool.types.Response;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.curator.framework.CuratorFramework;
 import org.redisson.api.RList;
-import org.redisson.api.RSet;
 import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 @Slf4j
 @RestController()
 @CrossOrigin("*")
-@RequestMapping("/dynamic/thread/pool/")
+@RequestMapping("/dynamic/thread/pool")
 public class DynamicThreadPoolController {
 
+    /**
+     * 通过 appName + "_" + threadPoolName 获取配置
+     * ThreadPoolConfigEntity config = configs.get(appName + "_" + threadPoolName);
+     */
+    @DCCValue("config")
+    private Map<String, ThreadPoolConfigEntity> configs = new HashMap<>();
+
     @Resource
-    public RedissonClient redissonClient;
+    private RedissonClient redissonClient;
+
+    @Resource
+    private CuratorFramework curatorFramework;
+
+    @Value("${dynamic.thread.pool.config.redis.enabled}")
+    private boolean redisIsEnabled;
+
+    @Value("${dynamic.thread.pool.config.zookeeper.enabled}")
+    private boolean zookeeperIsEnabled;
+
+    private final String BASE_CONFIG_PATH = "/dynamic/thread/pool/config";
 
     /**
      * 查询线程池数据
@@ -30,13 +53,36 @@ public class DynamicThreadPoolController {
      */
     @GetMapping("/query_thread_pool_list")
     public Response<List<ThreadPoolConfigEntity>> queryThreadPoolList() {
+        List<ThreadPoolConfigEntity> res = new ArrayList<>();
         try {
-            // 获取线程池集合
-            RList<ThreadPoolConfigEntity> cacheList = redissonClient.getList("THREAD_POOL_CONFIG_LIST_KEY");
+            if (redisIsEnabled) {
+                log.info("redis配置中心，查询线程池数据");
+                RList<ThreadPoolConfigEntity> cacheList = redissonClient.getList("THREAD_POOL_CONFIG_LIST_KEY");
+                res = cacheList.readAll();
+            } else if (zookeeperIsEnabled) {
+                log.info("zookeeper配置中心，查询线程池数据");
+                if (curatorFramework.checkExists().forPath(BASE_CONFIG_PATH) != null) {
+                    List<String> appNameList = curatorFramework.getChildren().forPath(BASE_CONFIG_PATH);
+                    for (String appName : appNameList) {
+                        String appNamePath = BASE_CONFIG_PATH.concat("/").concat(appName);
+                        if (curatorFramework.checkExists().forPath(appNamePath) != null) {
+                            List<String> threadPoolNameList = curatorFramework.getChildren().forPath(appNamePath);
+                            for (String threadPoolName : threadPoolNameList) {
+                                String threadPoolNamePath = BASE_CONFIG_PATH.concat("/").concat(appName).concat("/").concat(threadPoolName);
+                                if (curatorFramework.checkExists().forPath(threadPoolNamePath) != null) {
+                                    String jsonStr = new String(curatorFramework.getData().forPath(threadPoolNamePath), StandardCharsets.UTF_8);
+                                    ThreadPoolConfigEntity threadPoolConfigEntity = JSON.parseObject(jsonStr, ThreadPoolConfigEntity.class);
+                                    res.add(threadPoolConfigEntity);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             return Response.<List<ThreadPoolConfigEntity>>builder()
                     .code(Response.Code.SUCCESS.getCode())
                     .info(Response.Code.SUCCESS.getInfo())
-                    .data(cacheList.readAll())
+                    .data(res)
                     .build();
         } catch (Exception e) {
             log.error("查询线程池数据异常", e);
@@ -54,9 +100,21 @@ public class DynamicThreadPoolController {
      */
     @GetMapping("/query_thread_pool_config")
     public Response<ThreadPoolConfigEntity> queryThreadPoolConfig(@RequestParam String appName, @RequestParam String threadPoolName) {
+        ThreadPoolConfigEntity threadPoolConfigEntity = new ThreadPoolConfigEntity();
         try {
-            String cacheKey = "THREAD_POOL_CONFIG_PARAMETER_LIST_KEY" + "_" + appName + "_" + threadPoolName;
-            ThreadPoolConfigEntity threadPoolConfigEntity = redissonClient.<ThreadPoolConfigEntity>getBucket(cacheKey).get();
+            if (redisIsEnabled) {
+                log.info("redis配置中心，查询appName:{}，threadPoolName:{} 配置", appName, threadPoolName);
+                String cacheKey = "THREAD_POOL_CONFIG_PARAMETER_LIST_KEY" + "_" + appName + "_" + threadPoolName;
+                threadPoolConfigEntity = redissonClient.<ThreadPoolConfigEntity>getBucket(cacheKey).get();
+            } else if (zookeeperIsEnabled) {
+                log.info("zookeeper配置中心，查询appName:{}，threadPoolName:{} 配置", appName, threadPoolName);
+                String path = BASE_CONFIG_PATH.concat("/").concat(appName).concat("/").concat(threadPoolName);
+                if (curatorFramework.checkExists().forPath(path) != null) {
+                    String jsonStr = new String(curatorFramework.getData().forPath(path), StandardCharsets.UTF_8);
+                    threadPoolConfigEntity = JSON.parseObject(jsonStr, ThreadPoolConfigEntity.class);
+                }
+            }
+            log.info("appName:{}，threadPoolName:{} 配置:{}", appName, threadPoolName, JSON.toJSONString(threadPoolConfigEntity));
             return Response.<ThreadPoolConfigEntity>builder()
                     .code(Response.Code.SUCCESS.getCode())
                     .info(Response.Code.SUCCESS.getInfo())
@@ -87,8 +145,14 @@ public class DynamicThreadPoolController {
     public Response<Boolean> updateThreadPoolConfig(@RequestBody ThreadPoolConfigEntity request) {
         try {
             log.info("修改线程池配置开始 {} {} {}", request.getAppName(), request.getThreadPoolName(), JSON.toJSONString(request));
-            RTopic topic = redissonClient.getTopic("DYNAMIC_THREAD_POOL_REDIS_TOPIC" + "_" + request.getAppName());
-            topic.publish(request);
+            if (redisIsEnabled) {
+                RTopic topic = redissonClient.getTopic("DYNAMIC_THREAD_POOL_REDIS_TOPIC" + "_" + request.getAppName());
+                topic.publish(request);
+            } else if (zookeeperIsEnabled) {
+                String path = BASE_CONFIG_PATH.concat("/").concat(request.getAppName()).concat("/").concat(request.getThreadPoolName());
+                String data = JSON.toJSONString(request);
+                curatorFramework.setData().forPath(path, data.getBytes(StandardCharsets.UTF_8));
+            }
             log.info("修改线程池配置完成 {} {}", request.getAppName(), request.getThreadPoolName());
             return Response.<Boolean>builder()
                     .code(Response.Code.SUCCESS.getCode())

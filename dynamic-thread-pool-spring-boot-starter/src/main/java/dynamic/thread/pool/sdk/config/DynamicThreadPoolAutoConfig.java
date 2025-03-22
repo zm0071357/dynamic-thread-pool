@@ -1,14 +1,19 @@
 package dynamic.thread.pool.sdk.config;
 
+import ch.qos.logback.core.net.server.Client;
 import com.alibaba.fastjson.JSON;
 import dynamic.thread.pool.sdk.domain.DynamicThreadPoolService;
 import dynamic.thread.pool.sdk.domain.impl.DynamicThreadPoolServiceImpl;
 import dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
 import dynamic.thread.pool.sdk.registry.RegistryService;
 import dynamic.thread.pool.sdk.registry.redis.RedisRegistry;
+import dynamic.thread.pool.sdk.registry.zookeeper.ZookeeperRegistry;
 import dynamic.thread.pool.sdk.trigger.job.ThreadPoolDataReportJob;
 import dynamic.thread.pool.sdk.trigger.listener.ThreadPoolListener;
 import org.apache.commons.lang.StringUtils;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.redisson.Redisson;
 import org.redisson.api.RTopic;
 import org.redisson.api.RedissonClient;
@@ -16,12 +21,18 @@ import org.redisson.codec.JsonJacksonCodec;
 import org.redisson.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -34,12 +45,20 @@ import static dynamic.thread.pool.sdk.domain.model.valobj.RegistryEnumVO.*;
  */
 @Configuration
 @EnableScheduling
-@EnableConfigurationProperties(DynamicThreadPoolAutoProperties.class)
+@EnableConfigurationProperties({DynamicThreadPoolAutoRedisProperties.class, DynamicThreadPoolAutoZookeeperProperties.class})
 public class DynamicThreadPoolAutoConfig {
 
     private final Logger logger = LoggerFactory.getLogger(DynamicThreadPoolAutoConfig.class);
 
+    private final String BASE_CONFIG_PATH = "/dynamic/thread/pool/config";
+
     private String applicationName;
+
+    @Value("${dynamic.thread.pool.config.redis.enabled}")
+    private boolean redisIsEnabled;
+
+    @Value("${dynamic.thread.pool.config.zookeeper.enabled}")
+    private boolean zookeeperIsEnabled;
 
     /**
      * 创建 Redis客户端
@@ -47,7 +66,8 @@ public class DynamicThreadPoolAutoConfig {
      * @return
      */
     @Bean("dynamicThreadRedissonClient")
-    public RedissonClient redissonClient(DynamicThreadPoolAutoProperties properties) {
+    @Primary
+    public RedissonClient redissonClient(DynamicThreadPoolAutoRedisProperties properties) {
         Config config = new Config();
         // 根据需要可以设定编解码器；https://github.com/redisson/redisson/wiki/4.-%E6%95%B0%E6%8D%AE%E5%BA%8F%E5%88%97%E5%8C%96
         config.setCodec(JsonJacksonCodec.INSTANCE);
@@ -70,46 +90,32 @@ public class DynamicThreadPoolAutoConfig {
         return redissonClient;
     }
 
+
     /**
-     * 创建注册中心，报告线程池状态
+     * 创建 Redis注册中心，报告线程池状态
      * @param redissonClient
      * @return
      */
     @Bean
+    @ConditionalOnProperty(name = "dynamic.thread.pool.config.redis.enabled", havingValue = "true", matchIfMissing = false)
     public RegistryService redisRegistry(RedissonClient redissonClient) {
         return new RedisRegistry(redissonClient);
     }
 
     /**
-     * 创建动态线程池服务，用于管理线程池
-     * @param applicationContext
-     * @param threadPoolExecutorMap
+     * 创建 Redis主题，用于发布和订阅消息
      * @param redissonClient
+     * @param threadPoolListener
      * @return
      */
-    @Bean("dynamicThreadPoolService")
-    public DynamicThreadPoolServiceImpl dynamicThreadPoolService(ApplicationContext applicationContext, Map<String, ThreadPoolExecutor> threadPoolExecutorMap, RedissonClient redissonClient) {
-        // 通过配置信息获取应用名
-        applicationName = applicationContext.getEnvironment().getProperty("spring.application.name");
-        if (StringUtils.isBlank(applicationName)) {
-            applicationName = "default";
-            logger.error("动态线程池启动提示：应用未配置spring.application.name");
-        }
-        logger.info("应用名：{}", applicationName);
-        logger.info("动态线程池信息：{}", JSON.toJSONString(threadPoolExecutorMap.keySet()));
-
-        // 获取缓存数据，设置本地线程池配置
-        // 防止应用重启后使用配置文件的配置
-        Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
-        for (String threadPoolKey : threadPoolKeys) {
-            ThreadPoolConfigEntity threadPoolConfigEntity = redissonClient.<ThreadPoolConfigEntity>getBucket(THREAD_POOL_CONFIG_PARAMETER_LIST_KEY.getKey() + "_" + applicationName + "_" + threadPoolKey).get();
-            if (null == threadPoolConfigEntity) continue;
-            ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
-            threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
-            threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
-        }
-
-        return new DynamicThreadPoolServiceImpl(applicationName, threadPoolExecutorMap);
+    @Bean(name = "dynamicThreadPoolRedisTopic")
+    @ConditionalOnProperty(name = "dynamic.thread.pool.config.redis.enabled", havingValue = "true", matchIfMissing = false)
+    public RTopic threadPoolListener(RedissonClient redissonClient, ThreadPoolListener threadPoolListener) {
+        // 根据应用名创建消息
+        RTopic topic = redissonClient.getTopic(DYNAMIC_THREAD_POOL_REDIS_TOPIC.getKey() + "_" + applicationName);
+        // 为消息添加监听器
+        topic.addListener(ThreadPoolConfigEntity.class, threadPoolListener);
+        return topic;
     }
 
     /**
@@ -135,19 +141,83 @@ public class DynamicThreadPoolAutoConfig {
     }
 
     /**
-     * 创建 Redis主题，用于发布和订阅消息
-     * @param redissonClient
-     * @param threadPoolListener
+     * 创建 Zookeeper客户端
+     * @param properties
      * @return
      */
-    @Bean(name = "dynamicThreadPoolRedisTopic")
-    public RTopic threadPoolListener(RedissonClient redissonClient, ThreadPoolListener threadPoolListener) {
-        // 根据应用名创建消息
-        RTopic topic = redissonClient.getTopic(DYNAMIC_THREAD_POOL_REDIS_TOPIC.getKey() + "_" + applicationName);
-        // 为消息添加监听器
-        topic.addListener(ThreadPoolConfigEntity.class, threadPoolListener);
-        return topic;
+    @Bean(name = "dynamicThreadZookeeperClient")
+    @Primary
+    public CuratorFramework createWithOptions(DynamicThreadPoolAutoZookeeperProperties properties) {
+        ExponentialBackoffRetry backoffRetry = new ExponentialBackoffRetry(properties.getBaseSleepTimeMs(), properties.getMaxRetries());
+        CuratorFramework client = CuratorFrameworkFactory.builder()
+                .connectString(properties.getConnectString())
+                .retryPolicy(backoffRetry)
+                .sessionTimeoutMs(properties.getSessionTimeoutMs())
+                .connectionTimeoutMs(properties.getConnectionTimeoutMs())
+                .build();
+        client.start();
+        return client;
     }
 
+    /**
+     * 创建 Zookeeper注册中心，报告线程池状态
+     * @param client
+     * @return
+     */
+    @Bean
+    @ConditionalOnProperty(name = "dynamic.thread.pool.config.zookeeper.enabled", havingValue = "true", matchIfMissing = false)
+    public RegistryService zookeeperRegistry(CuratorFramework client) {
+        return new ZookeeperRegistry(client);
+    }
+
+    /**
+     * 根据配置创建动态线程池服务，用于管理线程池
+     * @param applicationContext
+     * @param threadPoolExecutorMap
+     * @param curatorFramework
+     * @param redissonClient
+     * @return
+     * @throws Exception
+     */
+    @Bean("dynamicThreadPoolService")
+    public DynamicThreadPoolServiceImpl dynamicThreadPoolService_Zookeeper(ApplicationContext applicationContext,
+                                                                           Map<String, ThreadPoolExecutor> threadPoolExecutorMap,
+                                                                           @Autowired(required = false) CuratorFramework curatorFramework,
+                                                                           @Autowired(required = false) RedissonClient redissonClient) throws Exception {
+        // 通过配置信息获取应用名
+        applicationName = applicationContext.getEnvironment().getProperty("spring.application.name");
+        if (StringUtils.isBlank(applicationName)) {
+            applicationName = "default";
+            logger.error("动态线程池启动提示：应用未配置spring.application.name");
+        }
+        logger.info("应用名：{}", applicationName);
+        logger.info("动态线程池信息：{}", JSON.toJSONString(threadPoolExecutorMap.keySet()));
+        if (redisIsEnabled) {
+            logger.info("使用redis作为配置中心");
+            // 获取缓存数据，设置本地线程池配置
+            // 防止应用重启后使用配置文件的配置
+            Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
+            for (String threadPoolKey : threadPoolKeys) {
+                ThreadPoolConfigEntity threadPoolConfigEntity = redissonClient.<ThreadPoolConfigEntity>getBucket(THREAD_POOL_CONFIG_PARAMETER_LIST_KEY.getKey() + "_" + applicationName + "_" + threadPoolKey).get();
+                if (null == threadPoolConfigEntity) continue;
+                ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
+                threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
+                threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
+            }
+        } else if (zookeeperIsEnabled) {
+            logger.info("使用zookeeper作为配置中心");
+//            Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
+//            for (String threadPoolKey : threadPoolKeys) {
+//                String path = BASE_CONFIG_PATH.concat("/").concat(applicationName).concat("/").concat(threadPoolKey);
+//                String jsonStr = new String(curatorFramework.getData().forPath(path), StandardCharsets.UTF_8);
+//                ThreadPoolConfigEntity threadPoolConfigEntity = JSON.parseObject(jsonStr, ThreadPoolConfigEntity.class);
+//                if (null == threadPoolConfigEntity) continue;
+//                ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
+//                threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
+//                threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
+//            }
+        }
+        return new DynamicThreadPoolServiceImpl(applicationName, threadPoolExecutorMap);
+    }
 
 }
