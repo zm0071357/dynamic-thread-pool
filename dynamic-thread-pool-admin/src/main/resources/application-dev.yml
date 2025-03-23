@@ -53,6 +53,13 @@ dynamic:
           # zookeeper
           connect-string: 123.57.226.115:2181
 
+# 飞书
+feishu:
+  config:
+    app_id:
+    app_secret:
+    web_hook:
+
 # 日志
 logging:
   level:

@@ -1,5 +1,6 @@
 package dynamic.thread.pool.trigger;
 
+import cn.hutool.http.HttpRequest;
 import com.alibaba.fastjson.JSON;
 import dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
 import dynamic.thread.pool.type.DCCValue;
@@ -43,6 +44,9 @@ public class DynamicThreadPoolController {
 
     @Value("${dynamic.thread.pool.config.zookeeper.enabled}")
     private boolean zookeeperIsEnabled;
+
+    @Value("${feishu.config.web_hook}")
+    private String webHook;
 
     private final String BASE_CONFIG_PATH = "/dynamic/thread/pool/config";
 
@@ -184,6 +188,19 @@ public class DynamicThreadPoolController {
                 curatorFramework.setData().forPath(path, data.getBytes(StandardCharsets.UTF_8));
             }
             log.info("修改线程池配置完成 {} {}", request.getAppName(), request.getThreadPoolName());
+            // 发送消息到飞书
+            String msg = "appName：".concat(request.getAppName()).concat(",")
+                    .concat("threadPoolName：").concat(request.getThreadPoolName()).concat(",")
+                    .concat("核心参数发生变更：")
+                    .concat("corePoolSize：").concat(String.valueOf(request.getCorePoolSize())).concat(",")
+                    .concat("maximumPoolSize：").concat(String.valueOf(request.getMaximumPoolSize())).concat("。");
+            Map<String,Object> json=new HashMap();
+            Map<String,Object> text=new HashMap();
+            json.put("msg_type", "text");
+            text.put("text", "线程池核心参数变更通知：" + msg);
+            json.put("content", text);
+            String result = HttpRequest.post(webHook).body(JSON.toJSONString(json), "application/json;charset=UTF-8").execute().body();
+            log.info("发送通知:{}，请求结果:{}", msg, result);
             return Response.<Boolean>builder()
                     .code(Response.Code.SUCCESS.getCode())
                     .info(Response.Code.SUCCESS.getInfo())
