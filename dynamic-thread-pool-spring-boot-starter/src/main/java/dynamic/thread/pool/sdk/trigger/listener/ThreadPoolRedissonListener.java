@@ -15,14 +15,14 @@ import java.util.List;
  * 实现MessageListener<ThreadPoolConfigEntity> 接口的监听器
  * 负责接收ThreadPoolConfigEntity类型的消息
  */
-public class ThreadPoolListener implements MessageListener<ThreadPoolConfigEntity> {
-    private Logger logger = LoggerFactory.getLogger(ThreadPoolListener.class);
+public class ThreadPoolRedissonListener implements MessageListener<ThreadPoolConfigEntity> {
+    private Logger logger = LoggerFactory.getLogger(ThreadPoolRedissonListener.class);
 
     private final DynamicThreadPoolService dynamicThreadPoolService;
 
     private final RegistryService registryService;
 
-    public ThreadPoolListener(DynamicThreadPoolService dynamicThreadPoolService, RegistryService registryService) {
+    public ThreadPoolRedissonListener(DynamicThreadPoolService dynamicThreadPoolService, RegistryService registryService) {
         this.dynamicThreadPoolService = dynamicThreadPoolService;
         this.registryService = registryService;
     }

@@ -5,7 +5,6 @@ import dynamic.thread.pool.sdk.domain.DynamicThreadPoolService;
 import dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -24,6 +23,7 @@ public class DynamicThreadPoolServiceImpl implements DynamicThreadPoolService {
     public DynamicThreadPoolServiceImpl(String applicationName, Map<String, ThreadPoolExecutor> threadPoolExecutorMap) {
         this.applicationName = applicationName;
         this.threadPoolExecutorMap = threadPoolExecutorMap;
+        logger.info("threadPoolExecutorMap大小: {}", threadPoolExecutorMap.size());
     }
 
     @Override

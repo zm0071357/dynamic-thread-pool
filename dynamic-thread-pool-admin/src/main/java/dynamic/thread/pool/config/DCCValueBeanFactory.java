@@ -2,13 +2,12 @@ package dynamic.thread.pool.config;
 
 import com.alibaba.fastjson.JSON;
 import dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
-import dynamic.thread.pool.sdk.type.DCCValue;
+import dynamic.thread.pool.type.DCCValue;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
-import org.springframework.context.annotation.Configuration;
 
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
@@ -20,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Zookeeper配置中心
  */
 @Slf4j
-@Configuration
+
 public class DCCValueBeanFactory implements BeanPostProcessor {
 
     private static final String BASE_CONFIG_PATH = "/dynamic/thread/pool";

@@ -1,6 +1,5 @@
 package dynamic.thread.pool.sdk.config;
 
-import ch.qos.logback.core.net.server.Client;
 import com.alibaba.fastjson.JSON;
 import dynamic.thread.pool.sdk.domain.DynamicThreadPoolService;
 import dynamic.thread.pool.sdk.domain.impl.DynamicThreadPoolServiceImpl;
@@ -9,7 +8,8 @@ import dynamic.thread.pool.sdk.registry.RegistryService;
 import dynamic.thread.pool.sdk.registry.redis.RedisRegistry;
 import dynamic.thread.pool.sdk.registry.zookeeper.ZookeeperRegistry;
 import dynamic.thread.pool.sdk.trigger.job.ThreadPoolDataReportJob;
-import dynamic.thread.pool.sdk.trigger.listener.ThreadPoolListener;
+import dynamic.thread.pool.sdk.trigger.listener.ThreadPoolCuratorFrameworkListener;
+import dynamic.thread.pool.sdk.trigger.listener.ThreadPoolRedissonListener;
 import org.apache.commons.lang.StringUtils;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
@@ -28,11 +28,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
-import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -66,7 +63,6 @@ public class DynamicThreadPoolAutoConfig {
      * @return
      */
     @Bean("dynamicThreadRedissonClient")
-    @Primary
     public RedissonClient redissonClient(DynamicThreadPoolAutoRedisProperties properties) {
         Config config = new Config();
         // 根据需要可以设定编解码器；https://github.com/redisson/redisson/wiki/4.-%E6%95%B0%E6%8D%AE%E5%BA%8F%E5%88%97%E5%8C%96
@@ -90,7 +86,6 @@ public class DynamicThreadPoolAutoConfig {
         return redissonClient;
     }
 
-
     /**
      * 创建 Redis注册中心，报告线程池状态
      * @param redissonClient
@@ -105,16 +100,16 @@ public class DynamicThreadPoolAutoConfig {
     /**
      * 创建 Redis主题，用于发布和订阅消息
      * @param redissonClient
-     * @param threadPoolListener
+     * @param threadPoolRedissonListener
      * @return
      */
     @Bean(name = "dynamicThreadPoolRedisTopic")
     @ConditionalOnProperty(name = "dynamic.thread.pool.config.redis.enabled", havingValue = "true", matchIfMissing = false)
-    public RTopic threadPoolListener(RedissonClient redissonClient, ThreadPoolListener threadPoolListener) {
+    public RTopic threadPoolListener(RedissonClient redissonClient, ThreadPoolRedissonListener threadPoolRedissonListener) {
         // 根据应用名创建消息
         RTopic topic = redissonClient.getTopic(DYNAMIC_THREAD_POOL_REDIS_TOPIC.getKey() + "_" + applicationName);
         // 为消息添加监听器
-        topic.addListener(ThreadPoolConfigEntity.class, threadPoolListener);
+        topic.addListener(ThreadPoolConfigEntity.class, threadPoolRedissonListener);
         return topic;
     }
 
@@ -136,8 +131,9 @@ public class DynamicThreadPoolAutoConfig {
      * @return
      */
     @Bean
-    public ThreadPoolListener threadPoolListener(DynamicThreadPoolService dynamicThreadPoolService, RegistryService registryService) {
-        return new ThreadPoolListener(dynamicThreadPoolService, registryService);
+    @ConditionalOnProperty(name = "dynamic.thread.pool.config.redis.enabled", havingValue = "true", matchIfMissing = false)
+    public ThreadPoolRedissonListener threadPoolRedissonListener(DynamicThreadPoolService dynamicThreadPoolService, RegistryService registryService) {
+        return new ThreadPoolRedissonListener(dynamicThreadPoolService, registryService);
     }
 
     /**
@@ -146,7 +142,6 @@ public class DynamicThreadPoolAutoConfig {
      * @return
      */
     @Bean(name = "dynamicThreadZookeeperClient")
-    @Primary
     public CuratorFramework createWithOptions(DynamicThreadPoolAutoZookeeperProperties properties) {
         ExponentialBackoffRetry backoffRetry = new ExponentialBackoffRetry(properties.getBaseSleepTimeMs(), properties.getMaxRetries());
         CuratorFramework client = CuratorFrameworkFactory.builder()
@@ -168,6 +163,20 @@ public class DynamicThreadPoolAutoConfig {
     @ConditionalOnProperty(name = "dynamic.thread.pool.config.zookeeper.enabled", havingValue = "true", matchIfMissing = false)
     public RegistryService zookeeperRegistry(CuratorFramework client) {
         return new ZookeeperRegistry(client);
+    }
+
+    /**
+     * 创建线程池配置调整监听器，用于监听Zookeeper节点的消息
+     * @param dynamicThreadPoolService
+     * @param registryService
+     * @param client
+     * @return
+     * @throws Exception
+     */
+    @Bean
+    @ConditionalOnProperty(name = "dynamic.thread.pool.config.zookeeper.enabled", havingValue = "true", matchIfMissing = false)
+    public ThreadPoolCuratorFrameworkListener threadPoolCuratorFrameworkListener(DynamicThreadPoolService dynamicThreadPoolService, RegistryService registryService, CuratorFramework client) throws Exception {
+        return new ThreadPoolCuratorFrameworkListener(dynamicThreadPoolService, registryService, client);
     }
 
     /**

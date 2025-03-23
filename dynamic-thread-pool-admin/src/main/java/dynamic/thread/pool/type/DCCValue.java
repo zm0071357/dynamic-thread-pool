@@ -1,4 +1,4 @@
-package dynamic.thread.pool.sdk.type;
+package dynamic.thread.pool.type;
 
 
 import java.lang.annotation.*;
