@@ -46,6 +46,8 @@ public class DynamicThreadPoolController {
 
     private final String BASE_CONFIG_PATH = "/dynamic/thread/pool/config";
 
+    private final String BASE_STATUS_PATH = "/dynamic/thread/pool/status";
+
     /**
      * 查询线程池数据
      * curl --request GET \
@@ -61,19 +63,34 @@ public class DynamicThreadPoolController {
                 res = cacheList.readAll();
             } else if (zookeeperIsEnabled) {
                 log.info("zookeeper配置中心，查询线程池数据");
+                // 查询配置节点
                 if (curatorFramework.checkExists().forPath(BASE_CONFIG_PATH) != null) {
                     List<String> appNameList = curatorFramework.getChildren().forPath(BASE_CONFIG_PATH);
                     for (String appName : appNameList) {
-                        String appNamePath = BASE_CONFIG_PATH.concat("/").concat(appName);
-                        if (curatorFramework.checkExists().forPath(appNamePath) != null) {
-                            List<String> threadPoolNameList = curatorFramework.getChildren().forPath(appNamePath);
+                        String appConfigPath = BASE_CONFIG_PATH.concat("/").concat(appName);
+                        if (curatorFramework.checkExists().forPath(appConfigPath) != null) {
+                            List<String> threadPoolNameList = curatorFramework.getChildren().forPath(appConfigPath);
                             for (String threadPoolName : threadPoolNameList) {
-                                String threadPoolNamePath = BASE_CONFIG_PATH.concat("/").concat(appName).concat("/").concat(threadPoolName);
-                                if (curatorFramework.checkExists().forPath(threadPoolNamePath) != null) {
-                                    String jsonStr = new String(curatorFramework.getData().forPath(threadPoolNamePath), StandardCharsets.UTF_8);
-                                    ThreadPoolConfigEntity threadPoolConfigEntity = JSON.parseObject(jsonStr, ThreadPoolConfigEntity.class);
-                                    res.add(threadPoolConfigEntity);
+                                // 读取配置节点数据
+                                String configPath = appConfigPath.concat("/").concat(threadPoolName);
+                                String configJson = new String(curatorFramework.getData().forPath(configPath), StandardCharsets.UTF_8);
+                                ThreadPoolConfigEntity configEntity = JSON.parseObject(configJson, ThreadPoolConfigEntity.class);
+
+                                // 读取状态节点数据
+                                String statusPath = BASE_STATUS_PATH.concat("/").concat(appName).concat("/").concat(threadPoolName);
+                                ThreadPoolConfigEntity statusEntity = new ThreadPoolConfigEntity();
+                                if (curatorFramework.checkExists().forPath(statusPath) != null) {
+                                    String statusJson = new String(curatorFramework.getData().forPath(statusPath), StandardCharsets.UTF_8);
+                                    statusEntity = JSON.parseObject(statusJson, ThreadPoolConfigEntity.class);
                                 }
+
+                                // 合并数据
+                                configEntity.setActiveCount(statusEntity.getActiveCount());
+                                configEntity.setQueueSize(statusEntity.getQueueSize());
+                                configEntity.setPoolSize(statusEntity.getPoolSize());
+                                configEntity.setQueueType(statusEntity.getQueueType());
+                                configEntity.setRemainingCapacity(statusEntity.getRemainingCapacity());
+                                res.add(configEntity);
                             }
                         }
                     }
@@ -106,12 +123,25 @@ public class DynamicThreadPoolController {
                 log.info("redis配置中心，查询appName:{}，threadPoolName:{} 配置", appName, threadPoolName);
                 String cacheKey = "THREAD_POOL_CONFIG_PARAMETER_LIST_KEY" + "_" + appName + "_" + threadPoolName;
                 threadPoolConfigEntity = redissonClient.<ThreadPoolConfigEntity>getBucket(cacheKey).get();
-            } else if (zookeeperIsEnabled) {
-                log.info("zookeeper配置中心，查询appName:{}，threadPoolName:{} 配置", appName, threadPoolName);
-                String path = BASE_CONFIG_PATH.concat("/").concat(appName).concat("/").concat(threadPoolName);
-                if (curatorFramework.checkExists().forPath(path) != null) {
-                    String jsonStr = new String(curatorFramework.getData().forPath(path), StandardCharsets.UTF_8);
-                    threadPoolConfigEntity = JSON.parseObject(jsonStr, ThreadPoolConfigEntity.class);
+            } if (zookeeperIsEnabled) {
+                // 读取配置节点数据
+                String configPath = BASE_CONFIG_PATH.concat("/").concat(appName).concat("/").concat(threadPoolName);
+                if (curatorFramework.checkExists().forPath(configPath) != null) {
+                    String configJson = new String(curatorFramework.getData().forPath(configPath), StandardCharsets.UTF_8);
+                    threadPoolConfigEntity = JSON.parseObject(configJson, ThreadPoolConfigEntity.class);
+                }
+
+                // 读取状态节点数据
+                String statusPath = BASE_STATUS_PATH.concat("/").concat(appName).concat("/").concat(threadPoolName);
+                if (curatorFramework.checkExists().forPath(statusPath) != null) {
+                    String statusJson = new String(curatorFramework.getData().forPath(statusPath), StandardCharsets.UTF_8);
+                    ThreadPoolConfigEntity statusEntity = JSON.parseObject(statusJson, ThreadPoolConfigEntity.class);
+                    // 合并状态字段
+                    threadPoolConfigEntity.setActiveCount(statusEntity.getActiveCount());
+                    threadPoolConfigEntity.setQueueSize(statusEntity.getQueueSize());
+                    threadPoolConfigEntity.setPoolSize(statusEntity.getPoolSize());
+                    threadPoolConfigEntity.setQueueType(statusEntity.getQueueType());
+                    threadPoolConfigEntity.setRemainingCapacity(statusEntity.getRemainingCapacity());
                 }
             }
             log.info("appName:{}，threadPoolName:{} 配置:{}", appName, threadPoolName, JSON.toJSONString(threadPoolConfigEntity));
@@ -168,6 +198,5 @@ public class DynamicThreadPoolController {
                     .build();
         }
     }
-
 }
 

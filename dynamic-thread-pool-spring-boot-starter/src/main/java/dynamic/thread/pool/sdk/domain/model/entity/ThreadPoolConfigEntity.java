@@ -1,11 +1,17 @@
 package dynamic.thread.pool.sdk.domain.model.entity;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 线程池实体对象
  */
 @Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class ThreadPoolConfigEntity {
 
     /**
@@ -52,9 +58,6 @@ public class ThreadPoolConfigEntity {
      * 队列剩余任务数
      */
     private int remainingCapacity;
-
-    public ThreadPoolConfigEntity() {
-    }
 
     public ThreadPoolConfigEntity(String appName, String threadPoolName) {
         this.appName = appName;

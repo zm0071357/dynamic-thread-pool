@@ -20,6 +20,8 @@ public class ZookeeperRegistry implements RegistryService {
 
     private static final String BASE_CONFIG_PATH = "/dynamic/thread/pool/config";
 
+    private static final String BASE_STATUS_PATH = "/dynamic/thread/pool/status";
+
     public ZookeeperRegistry(CuratorFramework curatorFramework) {
         this.curatorFramework = curatorFramework;
     }
@@ -30,7 +32,7 @@ public class ZookeeperRegistry implements RegistryService {
             String appName = threadPoolConfigEntity.getAppName();
             String threadPoolName = threadPoolConfigEntity.getThreadPoolName();
             if (appName == null || threadPoolName == null) return;
-            String path = BASE_CONFIG_PATH.concat("/").concat(appName);
+            String path = BASE_STATUS_PATH.concat("/").concat(appName);
             if (curatorFramework.checkExists().forPath(path) == null) {
                 log.info("新建节点:{}", path);
                 curatorFramework.create().creatingParentsIfNeeded().forPath(path);
@@ -40,7 +42,14 @@ public class ZookeeperRegistry implements RegistryService {
                 log.info("新建节点:{}的子节点:{}", path, threadPoolName);
                 curatorFramework.create().creatingParentsIfNeeded().forPath(children);
             }
-            String data = JSON.toJSONString(threadPoolConfigEntity);
+            ThreadPoolConfigEntity statusEntity = ThreadPoolConfigEntity.builder()
+                    .activeCount(threadPoolConfigEntity.getActiveCount())
+                    .poolSize(threadPoolConfigEntity.getPoolSize())
+                    .queueSize(threadPoolConfigEntity.getQueueSize())
+                    .queueType(threadPoolConfigEntity.getQueueType())
+                    .remainingCapacity(threadPoolConfigEntity.getRemainingCapacity())
+                    .build();
+            String data = JSON.toJSONString(statusEntity);
             curatorFramework.setData().forPath(children, data.getBytes(StandardCharsets.UTF_8));
         }
     }
