@@ -190,7 +190,7 @@ public class DynamicThreadPoolAutoConfig {
      * @throws Exception
      */
     @Bean("dynamicThreadPoolService")
-    public DynamicThreadPoolServiceImpl dynamicThreadPoolService_Zookeeper(ApplicationContext applicationContext,
+    public DynamicThreadPoolServiceImpl dynamicThreadPoolService(ApplicationContext applicationContext,
                                                                            Map<String, ThreadPoolExecutor> threadPoolExecutorMap,
                                                                            @Autowired(required = false) CuratorFramework curatorFramework,
                                                                            @Autowired(required = false) RedissonClient redissonClient) throws Exception {

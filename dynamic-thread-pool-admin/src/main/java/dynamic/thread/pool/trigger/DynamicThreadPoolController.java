@@ -3,7 +3,6 @@ package dynamic.thread.pool.trigger;
 import cn.hutool.http.HttpRequest;
 import com.alibaba.fastjson.JSON;
 import dynamic.thread.pool.sdk.domain.model.entity.ThreadPoolConfigEntity;
-import dynamic.thread.pool.type.DCCValue;
 import dynamic.thread.pool.types.Response;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.curator.framework.CuratorFramework;
