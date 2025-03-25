@@ -19,14 +19,14 @@ dynamic:
       config:
         redis:
           # 状态；true = 开启、false 关闭
-          enabled: false
+          enabled: true
           # redis host
           host: 123.57.226.115
           # redis port
           port: 16379
         zookeeper:
           # 状态；true = 开启、false 关闭
-          enabled: true
+          enabled: false
           # zookeeper
           connect-string: 123.57.226.115:2181
 

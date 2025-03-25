@@ -11,6 +11,10 @@ import org.slf4j.LoggerFactory;
 
 import static org.apache.curator.framework.recipes.cache.CuratorCacheListener.Type.NODE_CHANGED;
 
+/**
+ * Zookeeper监听器
+ * 只监听配置变化
+ */
 public class ThreadPoolCuratorFrameworkListener {
 
     private Logger logger = LoggerFactory.getLogger(ThreadPoolCuratorFrameworkListener.class);
@@ -74,8 +78,7 @@ public class ThreadPoolCuratorFrameworkListener {
             // 上报完整线程池列表
             registryService.reportThreadPool(dynamicThreadPoolService.queryThreadPoolList());
             // 上报当前线程池详细配置
-            ThreadPoolConfigEntity currentConfig =
-                    dynamicThreadPoolService.queryThreadPoolConfigByName(threadPoolName);
+            ThreadPoolConfigEntity currentConfig = dynamicThreadPoolService.queryThreadPoolConfigByName(threadPoolName);
             registryService.reportThreadPoolConfigParameter(currentConfig);
             logger.info("调整线程池配置，线程池名称：{} 更新完成", threadPoolName);
         } catch (Exception e) {

@@ -30,6 +30,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -202,29 +203,39 @@ public class DynamicThreadPoolAutoConfig {
         logger.info("应用名：{}", applicationName);
         logger.info("动态线程池信息：{}", JSON.toJSONString(threadPoolExecutorMap.keySet()));
         if (redisIsEnabled) {
-            logger.info("使用redis作为配置中心");
+            logger.info("使用redis作为配置中心，获取缓存数据");
             // 获取缓存数据，设置本地线程池配置
             // 防止应用重启后使用配置文件的配置
             Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
             for (String threadPoolKey : threadPoolKeys) {
                 ThreadPoolConfigEntity threadPoolConfigEntity = redissonClient.<ThreadPoolConfigEntity>getBucket(THREAD_POOL_CONFIG_PARAMETER_LIST_KEY.getKey() + "_" + applicationName + "_" + threadPoolKey).get();
-                if (null == threadPoolConfigEntity) continue;
+                if (null == threadPoolConfigEntity) {
+                    logger.info("未缓存数据:{} {}", applicationName, threadPoolKey);
+                    continue;
+                }
                 ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
                 threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
                 threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
             }
         } else if (zookeeperIsEnabled) {
-            logger.info("使用zookeeper作为配置中心");
-//            Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
-//            for (String threadPoolKey : threadPoolKeys) {
-//                String path = BASE_CONFIG_PATH.concat("/").concat(applicationName).concat("/").concat(threadPoolKey);
-//                String jsonStr = new String(curatorFramework.getData().forPath(path), StandardCharsets.UTF_8);
-//                ThreadPoolConfigEntity threadPoolConfigEntity = JSON.parseObject(jsonStr, ThreadPoolConfigEntity.class);
-//                if (null == threadPoolConfigEntity) continue;
-//                ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
-//                threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
-//                threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
-//            }
+            logger.info("使用zookeeper作为配置中心，获取节点数据");
+            // 获取Zookeeper的节点数据，设置本地线程池配置
+            // 防止应用重启后使用配置文件的配置
+            Set<String> threadPoolKeys = threadPoolExecutorMap.keySet();
+            for (String threadPoolKey : threadPoolKeys) {
+                String path = BASE_CONFIG_PATH.concat("/").concat(applicationName).concat("/").concat(threadPoolKey);
+                if (curatorFramework.checkExists().forPath(path) != null) {
+                    String jsonStr = new String(curatorFramework.getData().forPath(path), StandardCharsets.UTF_8);
+                    ThreadPoolConfigEntity threadPoolConfigEntity = JSON.parseObject(jsonStr, ThreadPoolConfigEntity.class);
+                    if (null == threadPoolConfigEntity) {
+                        logger.info("无节点数据:{} {}", applicationName, threadPoolKey);
+                        continue;
+                    }
+                    ThreadPoolExecutor threadPoolExecutor = threadPoolExecutorMap.get(threadPoolKey);
+                    threadPoolExecutor.setCorePoolSize(threadPoolConfigEntity.getCorePoolSize());
+                    threadPoolExecutor.setMaximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize());
+                }
+            }
         }
         return new DynamicThreadPoolServiceImpl(applicationName, threadPoolExecutorMap);
     }

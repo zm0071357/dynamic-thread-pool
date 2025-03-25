@@ -26,7 +26,7 @@ public class ThreadPoolDataReportJob {
         this.registryService = registryService;
     }
 
-    @Scheduled(cron = "0/20 * * * * ?")
+    @Scheduled(cron = "0/10 * * * * ?")
     public void execReportThreadPoolList() throws Exception {
         logger.info("获取线程池配置列表并上报到注册中心");
         // 获取线程池配置列表

@@ -42,23 +42,23 @@ dynamic:
       config:
         redis:
           # 状态；true = 开启、false 关闭
-          enabled: false
+          enabled: true
           # redis host
           host: 123.57.226.115
           # redis port
           port: 16379
         zookeeper:
           # 状态；true = 开启、false 关闭
-          enabled: true
+          enabled: false
           # zookeeper
           connect-string: 123.57.226.115:2181
 
 # 飞书
 feishu:
   config:
-    app_id:
-    app_secret:
-    web_hook:
+    app_id: cli_a7553d24c328900d
+    app_secret: TlpF24XRTpLRMVCV0U30Lfhu6klKv5Kb
+    web_hook: https://open.feishu.cn/open-apis/bot/v2/hook/8a7ab98b-9a94-4620-bc01-42c38d6d905f
 
 # 日志
 logging:

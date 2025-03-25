@@ -32,30 +32,48 @@ public class ZookeeperRegistry implements RegistryService {
             String appName = threadPoolConfigEntity.getAppName();
             String threadPoolName = threadPoolConfigEntity.getThreadPoolName();
             if (appName == null || threadPoolName == null) return;
-            String path = BASE_STATUS_PATH.concat("/").concat(appName);
-            if (curatorFramework.checkExists().forPath(path) == null) {
-                log.info("新建节点:{}", path);
-                curatorFramework.create().creatingParentsIfNeeded().forPath(path);
+            String configPath = BASE_CONFIG_PATH.concat("/").concat(appName);
+            String statusPath = BASE_STATUS_PATH.concat("/").concat(appName);
+            if (curatorFramework.checkExists().forPath(configPath) == null) {
+                log.info("新增配置节点:{}", configPath);
+                log.info("新建状态节点:{}", statusPath);
+                curatorFramework.create().creatingParentsIfNeeded().forPath(configPath);
+                curatorFramework.create().creatingParentsIfNeeded().forPath(statusPath);
             }
-            String children = path.concat("/").concat(threadPoolName);
-            if (curatorFramework.checkExists().forPath(children) == null) {
-                log.info("新建节点:{}的子节点:{}", path, threadPoolName);
-                curatorFramework.create().creatingParentsIfNeeded().forPath(children);
+            String configChildren = configPath.concat("/").concat(threadPoolName);
+            String statusChildren = statusPath.concat("/").concat(threadPoolName);
+            if (curatorFramework.checkExists().forPath(configChildren) == null) {
+                log.info("新建配置节点:{}的子节点:{}", configPath, threadPoolName);
+                log.info("新建状态节点:{}的子节点:{}", statusPath, threadPoolName);
+                curatorFramework.create().creatingParentsIfNeeded().forPath(configChildren);
+                curatorFramework.create().creatingParentsIfNeeded().forPath(statusChildren);
+
+                ThreadPoolConfigEntity config = ThreadPoolConfigEntity.builder()
+                        .appName(threadPoolConfigEntity.getAppName())
+                        .threadPoolName(threadPoolConfigEntity.getThreadPoolName())
+                        .corePoolSize(threadPoolConfigEntity.getCorePoolSize())
+                        .maximumPoolSize(threadPoolConfigEntity.getMaximumPoolSize())
+                        .build();
+                String configData = JSON.toJSONString(config);
+                log.info("配置节点写入:{} {}", configChildren, configData);
+                curatorFramework.setData().forPath(configChildren, configData.getBytes(StandardCharsets.UTF_8));
             }
-            ThreadPoolConfigEntity statusEntity = ThreadPoolConfigEntity.builder()
-                    .activeCount(threadPoolConfigEntity.getActiveCount())
+
+            ThreadPoolConfigEntity status = ThreadPoolConfigEntity.builder()
                     .poolSize(threadPoolConfigEntity.getPoolSize())
-                    .queueSize(threadPoolConfigEntity.getQueueSize())
-                    .queueType(threadPoolConfigEntity.getQueueType())
                     .remainingCapacity(threadPoolConfigEntity.getRemainingCapacity())
+                    .queueType(threadPoolConfigEntity.getQueueType())
+                    .queueSize(threadPoolConfigEntity.getQueueSize())
+                    .activeCount(threadPoolConfigEntity.getActiveCount())
                     .build();
-            String data = JSON.toJSONString(statusEntity);
-            curatorFramework.setData().forPath(children, data.getBytes(StandardCharsets.UTF_8));
+            String statusData = JSON.toJSONString(status);
+            log.info("状态节点写入:{} {}", statusChildren, status);
+            curatorFramework.setData().forPath(statusChildren, statusData.getBytes(StandardCharsets.UTF_8));
         }
     }
 
     @Override
     public void reportThreadPoolConfigParameter(ThreadPoolConfigEntity threadPoolConfigEntity) {
-        log.info("---");
+        log.info("------");
     }
 }

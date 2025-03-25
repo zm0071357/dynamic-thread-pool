@@ -26,13 +26,6 @@ import java.util.Map;
 @RequestMapping("/dynamic/thread/pool")
 public class DynamicThreadPoolController {
 
-    /**
-     * 通过 appName + "_" + threadPoolName 获取配置
-     * ThreadPoolConfigEntity config = configs.get(appName + "_" + threadPoolName);
-     */
-    @DCCValue("config")
-    private Map<String, ThreadPoolConfigEntity> configs = new HashMap<>();
-
     @Resource
     private RedissonClient redissonClient;
 
@@ -53,7 +46,7 @@ public class DynamicThreadPoolController {
     private final String BASE_STATUS_PATH = "/dynamic/thread/pool/status";
 
     /**
-     * 查询线程池数据
+     * 查询线程池列表
      * curl --request GET \
      * --url 'http://localhost:8089/api/v1/dynamic/thread/pool/query_thread_pool_list'
      */
@@ -164,7 +157,7 @@ public class DynamicThreadPoolController {
     }
 
     /**
-     * 修改线程池配置
+     * 修改线程池配置 - 核心线程数和最大线程数
      * curl --request POST \
      * --url http://localhost:8089/dynamic/thread/pool/update_thread_pool_config \
      * --header 'content-type: application/json' \
@@ -189,10 +182,10 @@ public class DynamicThreadPoolController {
             }
             log.info("修改线程池配置完成 {} {}", request.getAppName(), request.getThreadPoolName());
             // 发送消息到飞书
-            String msg = "appName：".concat(request.getAppName()).concat(",")
-                    .concat("threadPoolName：").concat(request.getThreadPoolName()).concat(",")
+            String msg = "appName：".concat(request.getAppName()).concat("，")
+                    .concat("threadPoolName：").concat(request.getThreadPoolName()).concat("，")
                     .concat("核心参数发生变更：")
-                    .concat("corePoolSize：").concat(String.valueOf(request.getCorePoolSize())).concat(",")
+                    .concat("corePoolSize：").concat(String.valueOf(request.getCorePoolSize())).concat("，")
                     .concat("maximumPoolSize：").concat(String.valueOf(request.getMaximumPoolSize())).concat("。");
             Map<String,Object> json=new HashMap();
             Map<String,Object> text=new HashMap();
